@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../../data/mock_coverage_repository.dart';
 import '../../domain/models/signal_quality.dart';
+import '../map/map_screen.dart';
 import '../theme/app_colors.dart';
 import '../widgets/nearest_antenna_card.dart';
 import '../widgets/nearby_antenna_card.dart';
@@ -35,13 +37,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'RANGO',
-                          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                            letterSpacing: 1.4,
-                            color: colors.primary,
-                            fontWeight: FontWeight.w700,
-                          ),
+                        SvgPicture.asset(
+                          'assets/images/logo.svg',
+                          height: 28,
+                          colorFilter: ColorFilter.mode(colors.primary, BlendMode.srcIn),
                         ),
                         const SizedBox(height: 6),
                         Text(
@@ -117,16 +116,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _handleFindBestSignal() async {
-    setState(() {
-      _isFindingBestSignal = true;
-    });
-
+    setState(() => _isFindingBestSignal = true);
     await Future<void>.delayed(const Duration(milliseconds: 900));
-
-    if (mounted) {
-      setState(() {
-        _isFindingBestSignal = false;
-      });
-    }
+    if (!mounted) return;
+    setState(() => _isFindingBestSignal = false);
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const MapScreen()),
+    );
   }
 }
