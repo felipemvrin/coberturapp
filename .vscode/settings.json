@@ -1,0 +1,6 @@
+{
+  "dart.flutterSdkPath": "/Users/felipemarin/development/flutter-old",
+  "terminal.integrated.env.osx": {
+    "PATH": "/Users/felipemarin/development/flutter-old/bin:${env:PATH}"
+  }
+}
