@@ -203,14 +203,6 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  void _centerOnUser() {
-    if (_userLocation != null) {
-      _mapController.move(_userLocation!, _initialZoom);
-    } else {
-      _locateUser();
-    }
-  }
-
   void _showLayerPanel() {
     showModalBottomSheet<void>(
       context: context,
