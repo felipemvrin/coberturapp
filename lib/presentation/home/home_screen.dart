@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import '../../data/mock_coverage_repository.dart';
+import '../../data/coverage_service.dart';
 import '../../domain/models/signal_quality.dart';
 import '../map/map_screen.dart';
 import '../theme/app_colors.dart';
@@ -16,101 +16,132 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final _repository = const MockCoverageRepository();
+  late final _coverageService = CoverageService();
   bool _isFindingBestSignal = false;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).extension<AppColors>() ?? AppColors.light;
-    final snapshot = _repository.getSnapshot();
 
     return Scaffold(
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+      body: FutureBuilder(
+        future: _coverageService.repository.getSnapshot(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          
+          if (!snapshot.hasData) {
+            return Center(
+              child: Text(
+                'Error al cargar datos de cobertura',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            );
+          }
+
+          final coverageSnapshot = snapshot.data!;
+
+          return SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SvgPicture.asset(
-                          'assets/images/logo.svg',
-                          height: 28,
-                          colorFilter: ColorFilter.mode(colors.primary, BlendMode.srcIn),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SvgPicture.asset(
+                              'assets/images/logo.svg',
+                              height: 28,
+                              colorFilter: ColorFilter.mode(colors.primary, BlendMode.srcIn),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Que no se escape la señal.',
+                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w500,
+                                color: colors.text,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Encuentra señal. Sigue conectado.',
-                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: colors.text,
-                          ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(builder: (_) => const MapScreen()),
                         ),
-                      ],
+                        icon: const Icon(Icons.location_on_outlined),
+                        iconSize: 18,
+                        style: IconButton.styleFrom(
+                          backgroundColor: colors.primary,
+                          foregroundColor: colors.surface,
+                          minimumSize: const Size(38, 38),
+                          padding: EdgeInsets.zero,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  SignalStatusCard(
+                    connectionStatus: coverageSnapshot.connectionStatus,
+                    operator: coverageSnapshot.operator,
+                    technology: coverageSnapshot.technology,
+                    signalQuality: coverageSnapshot.signalQuality,
+                    subtitle: coverageSnapshot.signalQuality.label,
+                  ),
+                  const SizedBox(height: 18),
+                  NearestAntennaCard(antenna: coverageSnapshot.nearestAntenna),
+                  const SizedBox(height: 18),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _handleFindBestSignal,
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                      ),
+                      icon: _isFindingBestSignal
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.search),
+                      label: Text(
+                        _isFindingBestSignal ? 'BUSCANDO...' : 'BUSCAR MEJOR SEÑAL',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
                     ),
                   ),
-                  IconButton(
-                    onPressed: () {},
-                    icon: const Icon(Icons.location_on_outlined),
-                    style: IconButton.styleFrom(
-                      backgroundColor: colors.surface,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  const SizedBox(height: 24),
+                  Text(
+                    'ANTENAS CERCANAS',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: colors.primary,
+                      fontWeight: FontWeight.w700,
                     ),
+                  ),
+                  const SizedBox(height: 12),
+                  ...coverageSnapshot.nearbyAntennas.map((antenna) => NearbyAntennaCard(antenna: antenna)),
+                  const SizedBox(height: 12),
+                  TextButton.icon(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(builder: (_) => const MapScreen()),
+                    ),
+                    icon: const Icon(Icons.map_outlined),
+                    label: const Text('VER MAPA'),
                   ),
                 ],
               ),
-              const SizedBox(height: 18),
-              SignalStatusCard(
-                connectionStatus: snapshot.connectionStatus,
-                operator: snapshot.operator,
-                technology: snapshot.technology,
-                signalQuality: snapshot.signalQuality,
-                subtitle: snapshot.signalQuality.label,
-              ),
-              const SizedBox(height: 18),
-              NearestAntennaCard(antenna: snapshot.nearestAntenna),
-              const SizedBox(height: 18),
-              FilledButton.icon(
-                onPressed: _handleFindBestSignal,
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                ),
-                icon: _isFindingBestSignal
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.search),
-                label: Text(
-                  _isFindingBestSignal ? 'BUSCANDO...' : 'BUSCAR MEJOR SEÑAL',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'ANTENAS CERCANAS',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: colors.primary,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 12),
-              ...snapshot.nearbyAntennas.map((antenna) => NearbyAntennaCard(antenna: antenna)),
-              const SizedBox(height: 12),
-              TextButton.icon(
-                onPressed: () {},
-                icon: const Icon(Icons.map_outlined),
-                label: const Text('VER MAPA'),
-              ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }

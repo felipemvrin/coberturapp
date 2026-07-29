@@ -36,6 +36,7 @@ dependencies:
   latlong2: ^0.9.1
   flutter_svg: ^2.0.10+1
   geolocator: ^11.0.0
+  flutter_compass: ^0.8.0
 
 dev_dependencies:
   flutter_test:
@@ -61,6 +62,8 @@ flutter:
 
   assets:
     - assets/images/logo.svg
+    - assets/images/favicon.svg
+    - assets/data/santiago-recoleta.csv
 
 
   # An image asset can refer to one or more resolution-specific "variants", see

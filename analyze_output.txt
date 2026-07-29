@@ -1,0 +1,1 @@
+bash: /Users/felipemarin/development/flutter-old/bin/flutter: Operation not permitted
