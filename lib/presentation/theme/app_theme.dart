@@ -13,11 +13,9 @@ class AppTheme {
         primary: colors.primary,
         secondary: colors.accent,
         surface: colors.surface,
-        background: colors.background,
         onPrimary: colors.surface,
         onSecondary: colors.primary,
         onSurface: colors.text,
-        onBackground: colors.text,
       ),
       scaffoldBackgroundColor: colors.background,
       cardTheme: CardTheme(
@@ -40,11 +38,9 @@ class AppTheme {
         primary: colors.primary,
         secondary: colors.accent,
         surface: colors.surface,
-        background: colors.background,
         onPrimary: colors.surface,
         onSecondary: colors.primary,
         onSurface: colors.text,
-        onBackground: colors.text,
       ),
       scaffoldBackgroundColor: colors.background,
       cardTheme: CardTheme(
