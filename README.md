@@ -2,6 +2,14 @@
 
 CobertuApp es una aplicación móvil desarrollada en Flutter para ayudar a los usuarios a consultar y entender la cobertura móvil en Chile. La interfaz inicial incluye un dashboard con estado de conexión, señal, antenas cercanas y una acción para buscar la mejor señal.
 
+## Screenshots
+
+<p align="center">
+<img src="assets/images/screen-01.png" width="280">
+<img src="assets/images/screen-02.png" width="280">
+<img src="assets/images/screen-03.png" width="280">
+</p>
+
 ## Características
 
 - Pantalla principal tipo dashboard para cobertura móvil
