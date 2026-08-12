@@ -20,17 +20,42 @@ CobertuApp es una aplicación móvil desarrollada en Flutter para ayudar a los u
 
 ## Requisitos
 
-- Flutter SDK instalado
+- macOS 12 o superior
+- Flutter 3.29.3 (incluye Dart 3.7.2; compatible con macOS 12)
 - Un emulador o dispositivo físico
 
 ## Instalación
 
+Este proyecto debe ejecutarse con Flutter 3.29.3. Las versiones actuales de
+Flutter pueden requerir macOS 14 o superior y no funcionan en macOS 12.
+
+### Instalación recomendada con FVM
+
 ```bash
 git clone https://github.com/felipemvrin/cobertuapp.git
 cd cobertuapp
-flutter pub get
-flutter run
+brew install fvm
+fvm install 3.29.3
+fvm use 3.29.3
+fvm flutter pub get
+fvm flutter run
 ```
+
+Para comprobar que se está usando la versión correcta:
+
+```bash
+fvm flutter --version
+```
+
+La salida debe indicar `Flutter 3.29.3` y `Dart 3.7.2`. A partir de entonces,
+ejecuta los comandos de Flutter anteponiendo `fvm`, por ejemplo:
+
+```bash
+fvm flutter test
+fvm flutter run -d chrome
+```
+
+Si FVM ya está instalado, comienza directamente desde `fvm install 3.29.3`.
 
 ## Estructura del proyecto
 
