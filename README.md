@@ -5,9 +5,9 @@ CobertuApp es una aplicación móvil desarrollada en Flutter para ayudar a los u
 ## Screenshots
 
 <p align="center">
-<img src="assets/images/screen-01.png" width="280">
-<img src="assets/images/screen-02.png" width="280">
-<img src="assets/images/screen-03.png" width="280">
+<img src="assets/images/screen-01.png" width="260">
+<img src="assets/images/screen-02.png" width="260">
+<img src="assets/images/screen-03.png" width="260">
 </p>
 
 ## Características
