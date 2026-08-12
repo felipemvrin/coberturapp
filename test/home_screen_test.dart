@@ -6,7 +6,7 @@ void main() {
   testWidgets('Home screen shows the main signal dashboard', (tester) async {
     await tester.pumpWidget(const MaterialApp(home: HomeScreen()));
 
-    expect(find.text('RANGO'), findsOneWidget);
+    expect(find.text('Que no se escape la señal.'), findsOneWidget);
     expect(find.text('BUSCAR MEJOR SEÑAL'), findsOneWidget);
     expect(find.text('ANTENAS CERCANAS'), findsOneWidget);
   });

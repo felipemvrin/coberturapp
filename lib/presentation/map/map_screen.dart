@@ -1,12 +1,23 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter_compass/flutter_compass.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
+import '../../config/app_constants.dart';
+import '../../data/coverage_service.dart';
+import '../../data/subtel_data_service.dart';
+import '../../domain/models/mobile_technology.dart';
+import '../../domain/models/nearby_antenna.dart';
+import '../../domain/models/signal_quality.dart';
+import '../../domain/utils/location_utils.dart';
 import '../theme/app_colors.dart';
 
-// Centro de respaldo si el GPS falla
-const _fallbackCenter = LatLng(-33.4489, -70.6693);
-const _initialZoom = 14.0;
+const _fallbackCenter = LatLng(
+  AppConstants.defaultLatitude,
+  AppConstants.defaultLongitude,
+);
+const _initialZoom = AppConstants.mapInitialZoom;
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -17,25 +28,139 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   final _mapController = MapController();
+  late final _coverageService = CoverageService();
+  
   LatLng? _userLocation;
   bool _loadingLocation = true;
   String? _locationError;
+  
+  List<NearbyAntenna> _nearbyAntennas = [];
+  bool _loadingAntennas = true;
 
   // Capas SUBTEL — se poblarán al cargar los CSV
   final List<Marker> _antennaMarkers = [];
-  final List<Polyline> _coverageLines = [];
 
   @override
   void initState() {
     super.initState();
-    _locateUser();
+    _initializeMap();
+  }
+
+  Future<void> _initializeMap() async {
+    // Primero intentar obtener ubicación, luego cargar antenas
+    await _locateUser();
+    // _locateUser ya llama a _loadAntennas()
+  }
+
+  Future<void> _loadAntennas() async {
+    setState(() => _loadingAntennas = true);
+    try {
+      // Cargar TODAS las antenas de Recoleta (no solo las 5 más cercanas)
+      final allAntennas = await SubtelDataService.loadAllRegions();
+      if (!mounted) return;
+      
+      // Calcular distancia desde ubicación actual
+      final location = _userLocation ?? _fallbackCenter;
+      final Distance distanceCalc = Distance();
+      
+      final antennasWithDistance = allAntennas.where((antenna) {
+        return antenna.latitude != null && antenna.longitude != null;
+      }).map((antenna) {
+        final antennaLocation = LatLng(antenna.latitude!, antenna.longitude!);
+        final distKm = distanceCalc.as(LengthUnit.Kilometer, location, antennaLocation);
+        final bearing = LocationUtils.calculateBearing(location, antennaLocation);
+        
+        return antenna.copyWith(
+          distanceKm: distKm,
+          direction: LocationUtils.bearingToDirection(bearing),
+          signalQuality: LocationUtils.getSignalQualityByDistance(distKm),
+        );
+      }).toList();
+      
+      setState(() {
+        _nearbyAntennas = antennasWithDistance;
+        _antennaMarkers.clear();
+        _antennaMarkers.addAll(_buildAntennaMarkers(antennasWithDistance));
+      });
+      // Ajustar el mapa para mostrar todas las antenas después de cargar
+      _fitMapToShowAllAntennas();
+    } catch (e) {
+      // Log omitido
+    } finally {
+      if (mounted) setState(() => _loadingAntennas = false);
+    }
+  }
+
+  void _fitMapToShowAllAntennas() {
+    final points = _antennaMarkers.map((marker) => marker.point).toList();
+    if (_userLocation != null) points.add(_userLocation!);
+    if (points.isEmpty) return;
+
+    final bounds = LatLngBounds.fromPoints(points);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
+      _mapController.fitBounds(
+        bounds,
+        options: const FitBoundsOptions(
+          padding: EdgeInsets.only(top: 24, right: 76, bottom: 132, left: 24),
+        ),
+      );
+    });
+  }
+
+  List<Marker> _buildAntennaMarkers(List<NearbyAntenna> antennas) {
+    return antennas.map((antenna) {
+      final lat = antenna.latitude;
+      final lon = antenna.longitude;
+      if (lat == null || lon == null) return null;
+
+      final color = antenna.operator.colorHex.hexToColor();
+      
+      return Marker(
+        point: LatLng(lat, lon),
+        width: 48,
+        height: 48,
+        child: GestureDetector(
+          onTap: () => _showAntennaInfo(antenna),
+          child: Container(
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.2),
+              shape: BoxShape.circle,
+              border: Border.all(color: color, width: 2),
+              boxShadow: [BoxShadow(color: color.withOpacity(0.4), blurRadius: 8)],
+            ),
+            child: Icon(Icons.broadcast_on_home, color: color, size: 24),
+          ),
+        ),
+      );
+    }).whereType<Marker>().toList();
+  }
+
+  void _showAntennaInfo(NearbyAntenna antenna) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (_) => _AntennaInfoPanel(antenna: antenna),
+    );
   }
 
   Future<void> _locateUser() async {
     setState(() => _loadingLocation = true);
     setState(() => _locationError = null);
     try {
-      // En web el navegador maneja el permiso al llamar getCurrentPosition
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        throw const LocationServiceDisabledException();
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        throw const PermissionDeniedException('Location permission denied');
+      }
+
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
         timeLimit: const Duration(seconds: 15),
@@ -43,11 +168,14 @@ class _MapScreenState extends State<MapScreen> {
       final location = LatLng(pos.latitude, pos.longitude);
       if (!mounted) return;
       setState(() => _userLocation = location);
-      _mapController.move(location, _initialZoom);
     } catch (_) {
       if (mounted) setState(() => _locationError = 'denied');
+      // Usar ubicación por defecto si hay error
+      if (mounted) setState(() => _userLocation = _fallbackCenter);
     } finally {
       if (mounted) setState(() => _loadingLocation = false);
+      // Cargar antenas después de obtener ubicación (real o fallback)
+      _loadAntennas();
     }
   }
 
@@ -57,7 +185,7 @@ class _MapScreenState extends State<MapScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Cobertura'),
+        title: const Text('CoberturApp'),
         centerTitle: false,
         actions: [
           if (_loadingLocation)
@@ -83,10 +211,10 @@ class _MapScreenState extends State<MapScreen> {
           if (_locationError != null) _buildLocationError(colors),
           FlutterMap(
             mapController: _mapController,
-            options: MapOptions(
-              initialCenter: _userLocation ?? _fallbackCenter,
+            options: const MapOptions(
+              initialCenter: _fallbackCenter,
               initialZoom: _initialZoom,
-              minZoom: 5,
+              minZoom: 3,
               maxZoom: 18,
             ),
             children: [
@@ -115,12 +243,76 @@ class _MapScreenState extends State<MapScreen> {
                   ),
                 ..._antennaMarkers,
               ]),
-              // Capa cobertura SUBTEL (se llenará con GeoJSON/CSV)
-              PolylineLayer(polylines: _coverageLines),
+              // Nota: Capa de cobertura SUBTEL (GeoJSON/polígonos) para próximas versiones
             ],
           ),
           _buildLegend(colors),
+          _buildCompass(colors),
+          _buildZoomControls(colors),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCompass(AppColors colors) {
+    return Positioned(
+      top: _locationError != null ? 72 : 16,
+      right: 16,
+      child: StreamBuilder<CompassEvent>(
+        stream: FlutterCompass.events,
+        builder: (context, snapshot) {
+          final heading = snapshot.data?.heading ?? 0.0;
+          return Container(
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              color: colors.surface.withOpacity(0.95),
+              shape: BoxShape.circle,
+              boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8)],
+            ),
+            child: Transform.rotate(
+              // Rota en sentido inverso para que la aguja apunte al norte
+              angle: -(heading * math.pi / 180),
+              child: Icon(Icons.navigation, color: colors.primary, size: 28),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildZoomControls(AppColors colors) {
+    return Positioned(
+      bottom: 24,
+      right: 16,
+      child: Column(
+        children: [
+          _zoomButton(Icons.add, colors, () {
+            final current = _mapController.camera.zoom;
+            _mapController.move(_mapController.camera.center, (current + 1).clamp(3, 18));
+          }),
+          const SizedBox(height: 8),
+          _zoomButton(Icons.remove, colors, () {
+            final current = _mapController.camera.zoom;
+            _mapController.move(_mapController.camera.center, (current - 1).clamp(3, 18));
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _zoomButton(IconData icon, AppColors colors, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: colors.surface.withOpacity(0.95),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 6)],
+        ),
+        child: Icon(icon, color: colors.primary, size: 22),
       ),
     );
   }
@@ -168,18 +360,28 @@ class _MapScreenState extends State<MapScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'CAPAS ACTIVAS',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.1,
-                color: colors.muted,
-              ),
+            Row(
+              children: [
+                Text(
+                  'CAPAS ACTIVAS',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.1,
+                    color: colors.muted,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (_loadingAntennas)
+                  SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.5, color: colors.primary)),
+              ],
             ),
             const SizedBox(height: 6),
             _legendItem(colors.primary, 'Tu ubicación', colors),
-            _legendItem(colors.signalGood, 'Antenas SUBTEL', colors),
+            if (_nearbyAntennas.isNotEmpty)
+              _legendItem(colors.signalGood, '${_nearbyAntennas.length} antenas SUBTEL', colors)
+            else
+              _legendItem(colors.muted, 'Antenas SUBTEL', colors),
           ],
         ),
       ),
@@ -211,6 +413,102 @@ class _MapScreenState extends State<MapScreen> {
   }
 }
 
+extension on String {
+  Color hexToColor() {
+    String hexColor = replaceFirst('#', '');
+    return Color(int.parse(hexColor, radix: 16) + 0xFF000000);
+  }
+}
+
+class _AntennaInfoPanel extends StatelessWidget {
+  const _AntennaInfoPanel({required this.antenna});
+
+  final NearbyAntenna antenna;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).extension<AppColors>() ?? AppColors.light;
+    final color = antenna.operator.colorHex.hexToColor();
+
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                antenna.operator.name,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: colors.text,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _infoRow('Distancia', '${antenna.distanceKm.toStringAsFixed(2)} km', colors),
+          const SizedBox(height: 8),
+          _infoRow('Dirección', antenna.direction, colors),
+          const SizedBox(height: 8),
+          _infoRow('Tecnología', antenna.technology.label, colors),
+          const SizedBox(height: 8),
+          _infoRow('Señal', antenna.signalQuality.label, colors),
+          const SizedBox(height: 8),
+          _infoRow('Ubicación', '${antenna.latitude?.toStringAsFixed(4)}, ${antenna.longitude?.toStringAsFixed(4)}', colors),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cerrar'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static Widget _infoRow(String label, String value, AppColors colors) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 80,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: colors.muted,
+              fontSize: 13,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: TextStyle(
+              color: colors.text,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _LayerPanel extends StatelessWidget {
   const _LayerPanel();
 
@@ -225,7 +523,7 @@ class _LayerPanel extends StatelessWidget {
           Text('Capas del mapa',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 16),
-          const _LayerTile(label: 'Antenas SUBTEL', subtitle: 'Próximamente — cargar CSV'),
+          const _LayerTile(label: 'Antenas SUBTEL', subtitle: 'Cargadas en tiempo real desde CSV'),
           const _LayerTile(label: 'Cobertura 4G', subtitle: 'Próximamente — GeoJSON SUBTEL'),
           const _LayerTile(label: 'Cobertura 5G', subtitle: 'Próximamente — GeoJSON SUBTEL'),
           const _LayerTile(label: 'Mi ubicación GPS', subtitle: 'Activa el permiso en el navegador'),
