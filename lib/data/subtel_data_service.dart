@@ -43,11 +43,11 @@ class SubtelDataService {
         if (fields.length < 8) continue;
 
         final empresa = fields[3].trim();
-        final latStr = fields[6].trim().replaceAll('"', '');
-        final lonStr = fields[7].trim().replaceAll('"', '');
+        final latStr = fields[6].trim();
+        final lonStr = fields[7].trim();
 
-        final lat = _dmsToDecimal(latStr);
-        final lon = _dmsToDecimal(lonStr);
+        final lat = _dmsToDecimal(latStr, negativeByDefault: true);
+        final lon = _dmsToDecimal(lonStr, negativeByDefault: true);
 
         antennas.add(
           NearbyAntenna(
@@ -70,14 +70,23 @@ class SubtelDataService {
   }
 
   /// Convierte coordenadas DMS (grados°minutos"segundos) a decimal
-  static double _dmsToDecimal(String dms) {
-    dms = dms.replaceAll('"', '').replaceAll('°', ' ').trim();
-    final parts = dms.split(' ');
+  static double _dmsToDecimal(
+    String dms, {
+    required bool negativeByDefault,
+  }) {
+    final normalized = dms.toUpperCase();
+    final isNegative = normalized.contains('S') ||
+        normalized.contains('W') ||
+        negativeByDefault && !normalized.contains('N') && !normalized.contains('E');
+
+    dms = dms.replaceAll(RegExp(r'["°]'), ' ').trim();
+    final parts = dms.split(RegExp(r'\s+'));
     if (parts.isEmpty) return 0;
     final degrees = double.tryParse(parts[0]) ?? 0;
     final minutes = parts.length > 1 ? double.tryParse(parts[1]) ?? 0 : 0;
     final seconds = parts.length > 2 ? double.tryParse(parts[2]) ?? 0 : 0;
-    return degrees + (minutes / 60) + (seconds / 3600);
+    final value = degrees.abs() + (minutes / 60) + (seconds / 3600);
+    return isNegative ? -value : value;
   }
 
   /// Obtiene el operador móvil de la cadena de texto del CSV
@@ -104,7 +113,12 @@ class SubtelDataService {
     for (int i = 0; i < line.length; i++) {
       final char = line[i];
       if (char == '"') {
-        inQuotes = !inQuotes;
+        if (inQuotes && i + 1 < line.length && line[i + 1] == '"') {
+          current += char;
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
       } else if (char == ',' && !inQuotes) {
         fields.add(current);
         current = '';

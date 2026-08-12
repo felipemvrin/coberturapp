@@ -92,37 +92,21 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _fitMapToShowAllAntennas() {
-    if (_antennaMarkers.isEmpty) return;
-    
-    // Obtener los límites de todas las antenas
-    double minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
-    
-    for (final marker in _antennaMarkers) {
-      minLat = math.min(minLat, marker.point.latitude);
-      maxLat = math.max(maxLat, marker.point.latitude);
-      minLon = math.min(minLon, marker.point.longitude);
-      maxLon = math.max(maxLon, marker.point.longitude);
-    }
-    
-    // Incluir ubicación del usuario si existe
-    if (_userLocation != null) {
-      minLat = math.min(minLat, _userLocation!.latitude);
-      maxLat = math.max(maxLat, _userLocation!.latitude);
-      minLon = math.min(minLon, _userLocation!.longitude);
-      maxLon = math.max(maxLon, _userLocation!.longitude);
-    }
-    
-    // Crear bounds con padding
-    final bounds = LatLngBounds(
-      LatLng(maxLat, minLon),
-      LatLng(minLat, maxLon),
-    );
-    
-    // Ajustar el mapa con animación
-    _mapController.fitBounds(
-      bounds,
-      options: const FitBoundsOptions(padding: EdgeInsets.all(100)),
-    );
+    final points = _antennaMarkers.map((marker) => marker.point).toList();
+    if (_userLocation != null) points.add(_userLocation!);
+    if (points.isEmpty) return;
+
+    final bounds = LatLngBounds.fromPoints(points);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
+      _mapController.fitBounds(
+        bounds,
+        options: const FitBoundsOptions(
+          padding: EdgeInsets.only(top: 24, right: 76, bottom: 132, left: 24),
+        ),
+      );
+    });
   }
 
   List<Marker> _buildAntennaMarkers(List<NearbyAntenna> antennas) {
@@ -164,7 +148,19 @@ class _MapScreenState extends State<MapScreen> {
     setState(() => _loadingLocation = true);
     setState(() => _locationError = null);
     try {
-      // En web el navegador maneja el permiso al llamar getCurrentPosition
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        throw const LocationServiceDisabledException();
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        throw const PermissionDeniedException('Location permission denied');
+      }
+
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
         timeLimit: const Duration(seconds: 15),
